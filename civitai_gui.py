@@ -329,7 +329,15 @@ class App(tk.Tk):
         meta = c.get("last_meta")
         if meta and meta.get("files"):
             self.meta = meta
-            self._on_meta(meta, quiet=True)
+            try:
+                self._on_meta(meta, quiet=True)
+            except Exception as ex:
+                # 上次的元数据可能来自不同来源（比如 HF），恢复失败不能拦住启动
+                self.meta = None
+                try:
+                    self.log_line("恢复上次解析结果失败（已跳过）：%s" % ex)
+                except Exception:
+                    pass
 
     def _save_cfg(self):
         E.save_config({
@@ -688,7 +696,11 @@ class App(tk.Tk):
             return
         f = files[i]
         self.var_name.set(f.get("name") or "model.safetensors")
-        self.var_url.set(E.build_api_url(self.meta.get("version_id"), f.get("id")))
+        if self.meta.get("_hf"):
+            # HuggingFace：直链本身就是下载地址，不要用 CivitAI 的版本/文件 ID 去拼
+            pass
+        elif self.meta.get("version_id") and f.get("id"):
+            self.var_url.set(E.build_api_url(self.meta.get("version_id"), f.get("id")))
         self.log_line("已选：%s（%s，%s）" % (f.get("name"), self._file_label(f) or "默认精度",
                                               E.human(f.get("bytes") or 0)))
 
@@ -945,42 +957,62 @@ class App(tk.Tk):
     def _on_manager_event(self, kind, tid, payload):
         self.q.put(("mgr", (kind, tid, payload)))
 
+    def _handle_event(self, kind, payload):
+        """处理一条来自队列的消息（解析结果 / 引擎事件）。"""
+        if kind == "meta":
+            self.parsing = False
+            self._on_meta(payload)
+        elif kind == "hf_auth":
+            self.parsing = False
+            self.btn_parse.configure(state="normal", text="解析")
+            self.log_line("该 HF 仓库需要登录授权，已弹出引导窗口")
+            if self._prompt_hf_auth(payload):
+                self.on_parse()          # 拿到 Token 后自动重新解析
+            else:
+                self.set_status("需要 HuggingFace 授权")
+        elif kind == "meta_err":
+            self.parsing = False
+            self.btn_parse.configure(state="normal", text="解析")
+            self.log_line("解析失败：%s" % payload)
+            self.set_status("解析失败：" + payload, "bad")
+        elif kind == "mgr":
+            ev, tid, val = payload
+            t = self.manager.get(tid)
+            label = t.name if t else tid
+            if ev == "log":
+                self.log_line(val, label)
+            elif ev == "state" and val == "done":
+                self.set_status("%s 已完成" % label, "good")
+
     def _poll(self):
         try:
             while True:
                 kind, payload = self.q.get_nowait()
-                if kind == "meta":
-                    self.parsing = False
-                    self._on_meta(payload)
-                elif kind == "hf_auth":
-                    self.parsing = False
-                    self.btn_parse.configure(state="normal", text="解析")
-                    self.log_line("该 HF 仓库需要登录授权，已弹出引导窗口")
-                    if self._prompt_hf_auth(payload):
-                        self.on_parse()          # 拿到 Token 后自动重新解析
-                    else:
-                        self.set_status("需要 HuggingFace 授权")
-                elif kind == "meta_err":
-                    self.parsing = False
-                    self.btn_parse.configure(state="normal", text="解析")
-                    self.log_line("解析失败：%s" % payload)
-                    self.set_status("解析失败：" + payload, "bad")
-                elif kind == "mgr":
-                    ev, tid, val = payload
-                    t = self.manager.get(tid)
-                    label = t.name if t else tid
-                    if ev == "log":
-                        self.log_line(val, label)
-                    elif ev == "state" and val == "done":
-                        self.set_status("%s 已完成" % label, "good")
+                try:
+                    self._handle_event(kind, payload)
+                except Exception as ex:
+                    # 单个事件出错只记日志，不能让轮询整体挂掉
+                    try:
+                        self.log_line("事件处理出错（已忽略）：%s: %s" % (type(ex).__name__, ex))
+                    except Exception:
+                        pass
         except queue.Empty:
             pass
 
-        self.manager.tick()
-        self._refresh_tree()
-        self._check_hash_failures()
-        self._check_hf_auth()
-        self.after(500, self._poll)
+        # 刷新这一段绝不能让异常逃出去：一旦逃出，after() 不再登记，
+        # 整个轮询循环就死了（界面看着还开着，但任务永远不动）。
+        try:
+            self.manager.tick()
+            self._refresh_tree()
+            self._check_hash_failures()
+            self._check_hf_auth()
+        except Exception as ex:
+            try:
+                self.log_line("刷新出错（已忽略，界面继续运行）：%s: %s" % (type(ex).__name__, ex))
+            except Exception:
+                pass
+        finally:
+            self.after(500, self._poll)
 
     def _refresh_tree(self):
         snaps = self.manager.snapshot()
