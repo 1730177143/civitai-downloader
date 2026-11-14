@@ -1,0 +1,28 @@
+# ---- 凭据：绝对不能提交 ----
+.civitai_token
+hf_token.txt
+.git-credentials
+
+# ---- 本地配置（含 token / 上次输入 / 任务快照）----
+civitai_gui_config.json
+
+# ---- 下载中间产物 ----
+*.part
+*.part.json
+*.part.json.tmp
+*.bad
+*.lock
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
