@@ -1,5 +1,9 @@
 # CivitAI / HuggingFace 模型下载器
 
+![license](https://img.shields.io/badge/license-MIT-blue.svg)
+![python](https://img.shields.io/badge/python-3.8%2B-3776ab.svg)
+![deps](https://img.shields.io/badge/dependencies-none-brightgreen.svg)
+
 一个带图形界面的模型下载器，专门解决 **"下载一小点就断开"** 的问题。
 多任务队列 · 世界级断点续传 · 分片并行 · 全局限速 · SHA256 校验 · 付费护栏。
 
@@ -217,6 +221,12 @@ A：先看 `.bad` 里有没有大段全零（说明是没下完被误判完成�
 
 **Q：CivitAI Key 泄露了怎么办？**
 A：立刻到 CivitAI → Account Settings → API Keys 吊销重建。本仓库不会提交任何凭据。
+
+## 许可证
+
+[MIT](LICENSE) © 2026 long liu
+
+可以自由使用、修改、分发、商用，保留版权与许可声明即可。
 
 ## 免责声明
 
