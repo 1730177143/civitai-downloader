@@ -164,6 +164,28 @@ class TaskManager:
         self._emit("state", tid, "removed")
         self.pump()
 
+    def clear_finished(self, targets=("done", "stopped")):
+        """把已完成 / 已停止的任务从队列里一次性移除。
+
+        只动队列，不动磁盘：模型文件、``.part`` 残留一律保留。
+        返回 (移除数量, 被移除的任务名列表)。
+        """
+        with self._lock:
+            keep, removed = [], []
+            for t in self.tasks:
+                if t.status in targets:
+                    if t.engine and t.engine.alive:
+                        t.engine.cancel()
+                    self._byid.pop(t.tid, None)
+                    removed.append(t.name)
+                else:
+                    keep.append(t)
+            self.tasks = keep
+        for t in removed:
+            self._emit("log", "", "已从队列移除：%s" % t)
+        self.pump()
+        return len(removed), removed
+
     # ---------- 并发 ----------
     def _active(self):
         """真正在占用带宽的任务。暂停中的任务连接是空闲的，不占并发名额。"""

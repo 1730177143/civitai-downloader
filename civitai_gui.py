@@ -215,6 +215,8 @@ class App(tk.Tk):
                           ("移除", self.on_remove_sel), ("打开文件夹", self.on_open_dir_sel)):
             ttk.Button(ctl, text=text, command=cmd).pack(side="left", padx=(0, 6))
         ttk.Button(ctl, text="全部停止", command=self.on_stop_all).pack(side="right")
+        ttk.Button(ctl, text="清理已结束", command=self.on_clear_finished).pack(
+            side="right", padx=(0, 6))
 
         netbar = ttk.Frame(qf)
         netbar.pack(fill="x", pady=(8, 0))
@@ -886,6 +888,30 @@ class App(tk.Tk):
             self.manager.start(retry_tid)
         self.set_status("已保存 Token，正在重试", "good")
         return True
+
+    def on_clear_finished(self):
+        """一次性清掉队列里"已完成 / 已停止"的任务（不动磁盘文件）。"""
+        targets = ("done", "stopped")
+        snaps = [s for s in self.manager.snapshot() if s["state"] in targets]
+        if not snaps:
+            messagebox.showinfo("清理已结束任务", "队列里没有已完成或已停止的任务。")
+            return
+        n_done = sum(1 for s in snaps if s["state"] == "done")
+        n_stop = len(snaps) - n_done
+        if not messagebox.askyesno(
+                "清理已结束任务",
+                "将从队列移除 %d 个任务（已完成 %d 个、已停止 %d 个）。\n\n"
+                "只清理队列记录：\n"
+                "  · 已下载好的模型文件保留\n"
+                "  · .part 进度保留（重新加入仍可续传）\n"
+                "  · 出错的任务不会被清理，方便你重试\n\n确定？"
+                % (len(snaps), n_done, n_stop)):
+            return
+        n, _names = self.manager.clear_finished(targets)
+        self._save_cfg()
+        self._refresh_tree()
+        self.log_line("已清理 %d 个已结束任务（磁盘文件保留）" % n)
+        self.set_status("已清理 %d 个任务" % n, "good")
 
     def on_remove_sel(self):
         tids = self._sel_tids()
